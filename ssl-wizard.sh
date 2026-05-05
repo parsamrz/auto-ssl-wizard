@@ -52,6 +52,7 @@ readonly COLOR_LIGHT_CYAN='\033[0;96m'
 
 # Global state variables
 DOMAIN=""
+DOMAINS_ARRAY=()
 LOG_FILE=""
 DEBUG_MODE="${DEBUG_MODE:-false}"
 QUIET_MODE="${QUIET_MODE:-false}"
@@ -218,6 +219,70 @@ prompt_yes_no() {
         ;;
     esac
   done
+}
+
+# Prompt user for domain input interactively
+prompt_for_domains() {
+  section_header "Domain Input"
+  
+  echo ""
+  echo "Enter the domain(s) you want to issue an SSL certificate for."
+  echo ""
+  echo "Options:"
+  echo "  - Single domain:        example.com"
+  echo "  - Multiple domains:     example.com,www.example.com,api.example.com"
+  echo "  - Wildcard domain:      *.example.com"
+  echo ""
+  
+  local input_domains
+  read -p "Enter domain(s) (comma-separated for multiple): " input_domains
+  
+  if [[ -z "$input_domains" ]]; then
+    log_error "No domains provided"
+    error_box "Error" "Domain input cannot be empty"
+    return 1
+  fi
+  
+  # Validate domain format
+  log_debug "Validating domain input: $input_domains"
+  
+  # Parse domains into array
+  IFS=',' read -ra DOMAINS_ARRAY <<< "$input_domains"
+  
+  # Trim whitespace from each domain
+  local -a trimmed_domains=()
+  for domain in "${DOMAINS_ARRAY[@]}"; do
+    domain=$(echo "$domain" | xargs)  # Trim whitespace
+    if [[ -z "$domain" ]]; then
+      continue
+    fi
+    
+    # Validate domain format (basic validation)
+    if ! [[ "$domain" =~ ^(\*\.)?[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]]; then
+      log_error "Invalid domain format: $domain"
+      error_box "Invalid Domain" "Domain format is invalid: $domain\n\nValid formats:\n• example.com\n• www.example.com\n• *.example.com"
+      return 1
+    fi
+    
+    trimmed_domains+=("$domain")
+  done
+  
+  if [[ ${#trimmed_domains[@]} -eq 0 ]]; then
+    log_error "No valid domains after parsing"
+    error_box "Error" "No valid domains provided"
+    return 1
+  fi
+  
+  DOMAINS_ARRAY=("${trimmed_domains[@]}")
+  DOMAIN="${DOMAINS_ARRAY[0]}"  # Set primary domain to first in list
+  
+  local domain_list
+  domain_list=$(printf '%s,' "${DOMAINS_ARRAY[@]}" | sed 's/,$//')
+  
+  log_info "Domains input validated. Count: ${#DOMAINS_ARRAY[@]}, Domains: $domain_list"
+  info_box "✓ Domains Accepted" "Domains to certificate:\n$domain_list\n\nTotal: ${#DOMAINS_ARRAY[@]} domain(s)"
+  
+  return 0
 }
 
 #############################################################################
@@ -1528,6 +1593,212 @@ handle_certbot_error() {
 # Tasks 6.12-6.13: Testing functions (to be used in main workflow)
 
 #############################################################################
+# SECTION 9A: CERTIFICATE VALIDATION & VERIFICATION
+#############################################################################
+
+# Validate certificate files exist and have valid content
+validate_certificate_files() {
+  local domain="$1"
+  local letsencrypt_path="/etc/letsencrypt/live/${domain}"
+  
+  log_info "Starting certificate file validation for $domain"
+  section_header "Certificate File Validation"
+  
+  local validation_errors=""
+  local validation_success=0
+  
+  # Check if certificate directory exists
+  if [[ ! -d "$letsencrypt_path" ]]; then
+    log_error "Certificate directory not found: $letsencrypt_path"
+    validation_errors="${validation_errors}✘ Certificate directory not found at $letsencrypt_path\n"
+  else
+    log_info "Certificate directory found: $letsencrypt_path"
+  fi
+  
+  # Array of required files
+  local -a required_files=("privkey.pem" "fullchain.pem" "chain.pem" "cert.pem")
+  local files_ok=true
+  
+  for file in "${required_files[@]}"; do
+    local filepath="${letsencrypt_path}/${file}"
+    
+    if [[ ! -f "$filepath" ]]; then
+      log_error "Certificate file not found: $filepath"
+      validation_errors="${validation_errors}✘ Missing file: $file\n"
+      files_ok=false
+    else
+      local filesize
+      filesize=$(stat -f%z "$filepath" 2>/dev/null || stat -c%s "$filepath" 2>/dev/null || echo "0")
+      
+      if [[ "$filesize" -le 0 ]]; then
+        log_error "Certificate file is empty: $filepath"
+        validation_errors="${validation_errors}✘ File is empty: $file (size: $filesize bytes)\n"
+        files_ok=false
+      else
+        log_info "✓ File exists and readable: $file (size: $filesize bytes)"
+      fi
+    fi
+  done
+  
+  # Validate certificate content with openssl
+  if [[ -f "${letsencrypt_path}/cert.pem" ]]; then
+    log_debug "Validating certificate content with openssl x509..."
+    
+    if openssl x509 -in "${letsencrypt_path}/cert.pem" -text -noout &>/dev/null; then
+      log_info "✓ Certificate content is valid (openssl x509 check passed)"
+    else
+      log_error "Certificate content validation failed"
+      validation_errors="${validation_errors}✘ Certificate content is invalid or corrupted\n"
+      files_ok=false
+    fi
+  fi
+  
+  # Validate fullchain.pem
+  if [[ -f "${letsencrypt_path}/fullchain.pem" ]]; then
+    log_debug "Validating fullchain certificate..."
+    
+    if openssl x509 -in "${letsencrypt_path}/fullchain.pem" -text -noout &>/dev/null; then
+      log_info "✓ Fullchain certificate is valid"
+    else
+      log_error "Fullchain validation failed"
+      validation_errors="${validation_errors}✘ Fullchain certificate is invalid\n"
+      files_ok=false
+    fi
+  fi
+  
+  # Check file permissions
+  if [[ -f "${letsencrypt_path}/privkey.pem" ]]; then
+    local perms
+    perms=$(stat -f%OLp "${letsencrypt_path}/privkey.pem" 2>/dev/null || stat -c%a "${letsencrypt_path}/privkey.pem" 2>/dev/null)
+    
+    if [[ "$perms" == "600" || "$perms" == "-rw-------" ]]; then
+      log_info "✓ Private key has correct permissions: $perms"
+    else
+      log_warn "Private key permissions are not 600: $perms (should be restricted)"
+    fi
+  fi
+  
+  if [[ "$files_ok" == false ]]; then
+    log_error "Certificate validation FAILED"
+    local error_display=$(echo -e "$validation_errors")
+    error_box "Certificate Validation Failed" "$error_display\nChecked location: $letsencrypt_path"
+    return 1
+  fi
+  
+  log_info "✓ Certificate file validation PASSED"
+  return 0
+}
+
+# Verify all requested domains are present in the certificate
+verify_domains_in_cert() {
+  local domain="$1"
+  shift
+  local -a requested_domains=("$@")
+  
+  if [[ ${#requested_domains[@]} -eq 0 ]]; then
+    requested_domains=("$domain")
+  fi
+  
+  log_info "Verifying requested domains in certificate: ${requested_domains[*]}"
+  section_header "Domain Verification in Certificate"
+  
+  local letsencrypt_path="/etc/letsencrypt/live/${domain}"
+  local cert_file="${letsencrypt_path}/cert.pem"
+  
+  if [[ ! -f "$cert_file" ]]; then
+    log_error "Certificate file not found for domain verification: $cert_file"
+    error_box "Domain Verification Failed" "Certificate file not found: $cert_file"
+    return 1
+  fi
+  
+  # Extract CN (Common Name)
+  local cn
+  cn=$(openssl x509 -in "$cert_file" -noout -subject 2>/dev/null | grep -oP '(?<=CN\s*=\s*)[^,]*' || echo "")
+  
+  log_debug "Certificate CN (Common Name): $cn"
+  
+  # Extract SAN (Subject Alternative Names)
+  local sans
+  sans=$(openssl x509 -in "$cert_file" -noout -ext subjectAltName 2>/dev/null | grep -oP '(?<=DNS:)[^,\s]*' | tr '\n' ',' | sed 's/,$//' || echo "")
+  
+  log_debug "Certificate SANs: $sans"
+  
+  # Check each requested domain
+  local -a found_domains=()
+  local -a missing_domains=()
+  local verification_ok=true
+  
+  for req_domain in "${requested_domains[@]}"; do
+    if [[ "$cn" == "$req_domain" ]] || [[ ",$sans," == *",$req_domain,"* ]]; then
+      found_domains+=("$req_domain")
+      log_info "✓ Domain found in certificate: $req_domain"
+    else
+      missing_domains+=("$req_domain")
+      log_error "✘ Domain NOT found in certificate: $req_domain"
+      verification_ok=false
+    fi
+  done
+  
+  # Display results
+  if [[ "$verification_ok" == false ]]; then
+    log_error "Domain verification FAILED - missing domains in certificate"
+    
+    local error_msg="The following domains were requested but not found in the certificate:\n\n"
+    for domain in "${missing_domains[@]}"; do
+      error_msg="${error_msg}✘ $domain\n"
+    done
+    
+    error_msg="${error_msg}\nCertificate contains:\nCN: $cn\nSANs: $sans"
+    
+    error_box "Domain Verification Failed" "$error_msg"
+    return 1
+  fi
+  
+  log_info "✓ All requested domains verified in certificate"
+  
+  local success_msg="Certificate verified to contain ${#found_domains[@]} domain(s):\n\n"
+  for domain in "${found_domains[@]}"; do
+    success_msg="${success_msg}✓ $domain\n"
+  done
+  
+  info_box "✓ Domain Verification Passed" "$success_msg"
+  return 0
+}
+
+# Comprehensive certificate validation (combines both checks)
+validate_certificate_issuance() {
+  local domain="$1"
+  shift
+  local -a requested_domains=("$@")
+  
+  log_info "Starting comprehensive certificate issuance validation"
+  
+  # Step 1: Validate files exist and are readable
+  if ! validate_certificate_files "$domain"; then
+    log_error "Certificate file validation failed"
+    return 1
+  fi
+  
+  echo ""
+  
+  # Step 2: Verify domains in certificate
+  if [[ ${#requested_domains[@]} -gt 0 ]]; then
+    if ! verify_domains_in_cert "$domain" "${requested_domains[@]}"; then
+      log_error "Domain verification in certificate failed"
+      return 1
+    fi
+  else
+    if ! verify_domains_in_cert "$domain"; then
+      log_error "Domain verification in certificate failed"
+      return 1
+    fi
+  fi
+  
+  log_info "✓ Comprehensive certificate validation PASSED"
+  return 0
+}
+
+#############################################################################
 # SECTION 9: CERTIFICATE STORAGE & FILE ORGANIZATION (Tasks 8.1-8.8)
 #############################################################################
 
@@ -1708,27 +1979,25 @@ EOF
 main() {
   show_banner
 
-  # Parse command line arguments
-  DOMAIN="${1:-}"
-
-  # Check if domain was provided
-  if [[ -z "$DOMAIN" ]]; then
-    log_error "Domain name is required"
-    echo ""
-    echo "Usage: $SCRIPT_NAME <domain> [additional_domains...]"
-    echo ""
-    echo "Examples:"
-    echo "  $SCRIPT_NAME example.com"
-    echo "  $SCRIPT_NAME example.com www.example.com api.example.com"
-    echo ""
+  # Set error traps early
+  set_traps
+  
+  # Phase 0: Interactive Domain Input (NEW - replaces command-line argument)
+  section_header "SSL Certificate Issuance Wizard"
+  
+  if ! prompt_for_domains; then
+    log_error "Domain prompt failed"
+    exit 1
+  fi
+  
+  # Validate we have at least one domain
+  if [[ -z "$DOMAIN" ]] || [[ ${#DOMAINS_ARRAY[@]} -eq 0 ]]; then
+    log_error "No valid domains provided"
     exit 1
   fi
 
-  log_info "Starting SSL Wizard for domain: $DOMAIN"
+  log_info "Starting SSL Wizard for domains: ${DOMAINS_ARRAY[*]}"
   init_logging "$DOMAIN"
-
-  # Set error traps
-  set_traps
 
   log_info "Creating working directories..."
   mkdir -p "$OUTPUT_DIR/$DOMAIN"/{certs,keys,configs}
@@ -1760,17 +2029,9 @@ main() {
   # Validate DNS (if public IP is known)
   if [[ "$public_ip" != "UNKNOWN" ]]; then
     log_info "Validating DNS configuration"
-    # Parse all provided domains
-    local -a all_domains=("$DOMAIN")
-    shift  # Remove first domain
-    while [[ $# -gt 0 ]]; do
-      all_domains+=("$1")
-      shift
-    done
-    
-    # Create domain string for validation
+    # Use DOMAINS_ARRAY instead of parsing command-line arguments
     local domain_string
-    domain_string=$(printf '%s,' "${all_domains[@]}" | sed 's/,$//')
+    domain_string=$(printf '%s,' "${DOMAINS_ARRAY[@]}" | sed 's/,$//')
     
     log_info "Domains to validate: $domain_string"
     
@@ -1846,7 +2107,7 @@ main() {
   
   # Show DNS record info if using DNS challenge
   if [[ "$challenge_type" == "dns" ]]; then
-    display_dns_status "$DOMAIN" "$public_ip"
+     display_dns_status "$DOMAIN" "$public_ip"
     
     # For manual DNS challenge, show the format
     info_box "DNS Challenge Format" "You will need to add a TXT record to your DNS:\n\nType: TXT\nName: _acme-challenge.$DOMAIN\nValue: [Will be provided by Certbot]"
@@ -1857,27 +2118,20 @@ main() {
     single)
       log_info "Issuing single-domain certificate"
       if issue_single_domain_certificate "$DOMAIN" "$email" "$challenge_type"; then
-        log_info "Certificate issued successfully"
+        log_info "Certbot completed for single domain"
       else
-        log_error "Certificate issuance failed"
+        log_error "Certificate issuance failed at certbot stage"
         handle_certbot_error "$DOMAIN" "Certbot exited with error"
         exit 1
       fi
       ;;
     multi)
-      log_info "Issuing multi-domain certificate"
-      # Collect all domains
-      local -a cert_domains=("$DOMAIN")
-      shift  # Remove processed first domain
-      while [[ $# -gt 0 ]]; do
-        cert_domains+=("$1")
-        shift
-      done
+      log_info "Issuing multi-domain certificate for ${#DOMAINS_ARRAY[@]} domains"
       
-      if issue_multi_domain_certificate "${cert_domains[@]}"; then
-        log_info "Certificate issued successfully for ${#cert_domains[@]} domains"
+      if issue_multi_domain_certificate "${DOMAINS_ARRAY[@]}"; then
+        log_info "Certbot completed for ${#DOMAINS_ARRAY[@]} domains"
       else
-        log_error "Certificate issuance failed"
+        log_error "Certificate issuance failed at certbot stage"
         handle_certbot_error "$DOMAIN" "Certbot exited with error"
         exit 1
       fi
@@ -1891,14 +2145,28 @@ main() {
       fi
       
       if issue_single_domain_certificate "*.$base_domain" "$email" "$challenge_type"; then
-        log_info "Wildcard certificate issued successfully"
+        log_info "Certbot completed for wildcard domain"
       else
-        log_error "Certificate issuance failed"
+        log_error "Certificate issuance failed at certbot stage"
         handle_certbot_error "$DOMAIN" "Certbot exited with error"
         exit 1
       fi
       ;;
   esac
+
+  # Phase 5b: CRITICAL - Validate Certificate Issuance Before Proceeding
+  section_header "Certificate Validation"
+  
+  log_info "Starting post-issuance validation"
+  
+  # Validate files exist and have content
+  if ! validate_certificate_issuance "$DOMAIN" "${DOMAINS_ARRAY[@]}"; then
+    log_error "CRITICAL: Certificate issuance validation FAILED"
+    error_box "Certificate Validation Failed" "The certificate files could not be validated.\n\nThis means the certificate may not have been issued correctly.\n\nPlease check:\n1. DNS records are correct\n2. Port 80/443 are accessible\n3. Certbot logs: /var/log/letsencrypt/\n4. Rate limits (LE allows 50 per domain per week)"
+    exit 1
+  fi
+  
+  log_info "✓ Certificate validation PASSED - proceeding with file organization"
 
   # Phase 6: File Organization
   section_header "File Organization"
@@ -1908,32 +2176,39 @@ main() {
   else
     log_error "Failed to organize certificate files"
     error_box "File Organization Failed" "Could not organize certificate files.\nFiles may still be available at /etc/letsencrypt/live/$DOMAIN/"
+    exit 1
   fi
   
   # Create summary
   create_issuance_summary "$DOMAIN" "$cert_type" "$challenge_type"
 
-  # Phase 7: Summary and Next Steps
-  section_header "Certificate Issued Successfully"
+  # Phase 7: Summary and Next Steps - ONLY SHOWN AFTER VALIDATION
+  section_header "✓ Certificate Successfully Issued & Verified"
   
-  local summary="Domain: $DOMAIN\n"
-  summary="${summary}Type: $cert_type\n"
-  summary="${summary}Challenge: $challenge_type\n"
+  local summary="✓ Certificate Issuance Complete and Verified\n\n"
+  summary="${summary}Domains Issued: ${#DOMAINS_ARRAY[@]}\n"
+  for domain in "${DOMAINS_ARRAY[@]}"; do
+    summary="${summary}  ✓ $domain\n"
+  done
+  summary="${summary}\n"
+  summary="${summary}Certificate Type: $cert_type\n"
+  summary="${summary}Challenge Type: $challenge_type\n"
   summary="${summary}Email: $email\n"
   summary="${summary}\n"
   summary="${summary}Certificate Location:\n"
-  summary="${summary}  Private Key:  ${OUTPUT_DIR}/${DOMAIN}/live/privkey.pem\n"
-  summary="${summary}  Certificate:  ${OUTPUT_DIR}/${DOMAIN}/live/fullchain.pem\n"
-  summary="${summary}  Chain:        ${OUTPUT_DIR}/${DOMAIN}/live/chain.pem\n"
+  summary="${summary}  Private Key:  ${OUTPUT_DIR}/${DOMAIN}/live/privkey.pem (600)\n"
+  summary="${summary}  Certificate:  ${OUTPUT_DIR}/${DOMAIN}/live/fullchain.pem (644)\n"
+  summary="${summary}  Chain:        ${OUTPUT_DIR}/${DOMAIN}/live/chain.pem (644)\n"
   summary="${summary}\n"
   summary="${summary}Next Steps:\n"
   summary="${summary}1. Update your web server configuration\n"
   summary="${summary}2. Set up automatic renewal with: certbot renew\n"
   summary="${summary}3. Test your certificate at: https://www.ssllabs.com/\n"
   summary="${summary}\n"
-  summary="${summary}Certificate valid for 90 days from issue date."
+  summary="${summary}Certificate valid for 90 days from issue date.\n"
+  summary="${summary}Automatic renewal will start 30 days before expiration."
   
-  info_box "✓ Certificate Successfully Issued" "$summary"
+  info_box "✓ Certificate Successfully Issued & Verified" "$summary"
   
   log_info "SSL Wizard execution completed successfully"
 }
