@@ -26,56 +26,56 @@
 
 ## 4. DNS Validation Implementation
 
-- [ ] 4.1 Implement function to parse comma-separated domain input
-- [ ] 4.2 Implement A record lookup using dig (primary) or nslookup (fallback)
-- [ ] 4.3 Implement NS record lookup and display
-- [ ] 4.4 Implement DNS-to-server-IP matching logic with clear mismatch reporting
-- [ ] 4.5 Implement user prompt for DNS mismatch override with warning
-- [ ] 4.6 Create validation loop for multiple domains with error handling per domain
-- [ ] 4.7 Test DNS validation against real domains with mismatches and correct DNS
+- [x] 4.1 Implement function to parse comma-separated domain input
+- [x] 4.2 Implement A record lookup using dig (primary) or nslookup (fallback)
+- [x] 4.3 Implement NS record lookup and display
+- [x] 4.4 Implement DNS-to-server-IP matching logic with clear mismatch reporting
+- [x] 4.5 Implement user prompt for DNS mismatch override with warning
+- [x] 4.6 Create validation loop for multiple domains with error handling per domain
+- [x] 4.7 Test DNS validation against real domains with mismatches and correct DNS
 
 ## 5. Port Conflict Resolution Implementation
 
-- [ ] 5.1 Implement function to identify process(es) on port 80
-- [ ] 5.2 Implement user confirmation prompt for process termination
-- [ ] 5.3 Implement graceful process termination (SIGTERM) with 5-second timeout
-- [ ] 5.4 Implement force kill (SIGKILL) as fallback if graceful fails
-- [ ] 5.5 Implement port verification after termination attempt
-- [ ] 5.6 Create error handling for failed termination with user guidance
-- [ ] 5.7 Test with mock processes (nginx, apache2) on port 80
+- [x] 5.1 Implement function to identify process(es) on port 80
+- [x] 5.2 Implement user confirmation prompt for process termination
+- [x] 5.3 Implement graceful process termination (SIGTERM) with 5-second timeout
+- [x] 5.4 Implement force kill (SIGKILL) as fallback if graceful fails
+- [x] 5.5 Implement port verification after termination attempt
+- [x] 5.6 Create error handling for failed termination with user guidance
+- [x] 5.7 Test with mock processes (nginx, apache2) on port 80
 
 ## 5a. Real-Time DNS Validation Implementation
 
-- [ ] 5a.1 Implement DNS polling function that queries every 5 seconds
-- [ ] 5a.2 Implement DNS record value comparison (expected vs. actual)
-- [ ] 5a.3 Create progress display during polling with attempt counter
-- [ ] 5a.4 Implement timeout handler for DNS propagation delays (configurable, default 3 minutes)
-- [ ] 5a.5 Implement multiple DNS server checking (Google 8.8.8.8, Cloudflare 1.1.1.1)
-- [ ] 5a.6 Display propagation time once DNS record is detected
-- [ ] 5a.7 Implement manual DNS check option (user runs dig command and reports)
-- [ ] 5a.8 Log all polling attempts and results with timestamps
-- [ ] **5a.9 NEW:** Implement DNS cache clearing before each DNS query
-- [ ] **5a.10 NEW:** Try cache clearing methods in order: resolvectl → systemctl → nscd
-- [ ] **5a.11 NEW:** Log cache flush status and method used for each query
-- [ ] **5a.12 NEW:** Handle systems without DNS cache services gracefully
-- [ ] 5a.13 Test real-time DNS validation on live domains with actual DNS changes
+- [x] 5a.1 Implement DNS polling function that queries every 5 seconds
+- [x] 5a.2 Implement DNS record value comparison (expected vs. actual)
+- [x] 5a.3 Create progress display during polling with attempt counter
+- [x] 5a.4 Implement timeout handler for DNS propagation delays (configurable, default 3 minutes)
+- [x] 5a.5 Implement multiple DNS server checking (Google 8.8.8.8, Cloudflare 1.1.1.1)
+- [x] 5a.6 Display propagation time once DNS record is detected
+- [x] 5a.7 Implement manual DNS check option (user runs dig command and reports)
+- [x] 5a.8 Log all polling attempts and results with timestamps
+- [x] **5a.9 NEW:** Implement DNS cache clearing before each DNS query
+- [x] **5a.10 NEW:** Try cache clearing methods in order: resolvectl → systemctl → nscd
+- [x] **5a.11 NEW:** Log cache flush status and method used for each query
+- [x] **5a.12 NEW:** Handle systems without DNS cache services gracefully
+- [x] 5a.13 Test real-time DNS validation on live domains with actual DNS changes
 
 ## 5b. DNS Cache Clearing Implementation
 
-- [ ] **5b.1 NEW:** Create DNS cache detection function to identify system cache service
-- [ ] **5b.2 NEW:** Implement `resolvectl flush-caches` for systemd-resolved systems
-- [ ] **5b.3 NEW:** Implement `systemctl restart systemd-resolved` as fallback for systemd-resolved
-- [ ] **5b.4 NEW:** Implement `nscd -i hosts` for nscd cache daemon
-- [ ] **5b.5 NEW:** Implement `service nscd restart` as nscd fallback
-- [ ] **5b.6 NEW:** Create fallback chain function (try methods in order, continue if all fail)
-- [ ] **5b.7 NEW:** Implement DNS cache clear before each polling query (every 5 seconds)
-- [ ] **5b.8 NEW:** Log cache flush method, status, and timestamp for each attempt
-- [ ] **5b.9 NEW:** Handle permissions issues (sudo not available) gracefully
-- [ ] **5b.10 NEW:** Add cache flush status to poll result logging (e.g., "[FRESH]" indicator)
-- [ ] **5b.11 NEW:** Test on Ubuntu 22.04 with systemd-resolved
-- [ ] **5b.12 NEW:** Test on Ubuntu 24.04 with systemd-resolved
-- [ ] **5b.13 NEW:** Test cache clearing behavior with real DNS changes
-- [ ] **5b.14 NEW:** Verify stale cache is not used (TXT records appear immediately after flush)
+- [x] **5b.1 NEW:** Create DNS cache detection function to identify system cache service
+- [x] **5b.2 NEW:** Implement `resolvectl flush-caches` for systemd-resolved systems
+- [x] **5b.3 NEW:** Implement `systemctl restart systemd-resolved` as fallback for systemd-resolved
+- [x] **5b.4 NEW:** Implement `nscd -i hosts` for nscd cache daemon
+- [x] **5b.5 NEW:** Implement `service nscd restart` as nscd fallback
+- [x] **5b.6 NEW:** Create fallback chain function (try methods in order, continue if all fail)
+- [x] **5b.7 NEW:** Implement DNS cache clear before each polling query (every 5 seconds)
+- [x] **5b.8 NEW:** Log cache flush method, status, and timestamp for each attempt
+- [x] **5b.9 NEW:** Handle permissions issues (sudo not available) gracefully
+- [x] **5b.10 NEW:** Add cache flush status to poll result logging (e.g., "[FRESH]" indicator)
+- [x] **5b.11 NEW:** Test on Ubuntu 22.04 with systemd-resolved
+- [x] **5b.12 NEW:** Test on Ubuntu 24.04 with systemd-resolved
+- [x] **5b.13 NEW:** Test cache clearing behavior with real DNS changes
+- [x] **5b.14 NEW:** Verify stale cache is not used (TXT records appear immediately after flush)
 
 ## 5c. DNS Query Optimization
 
