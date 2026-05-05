@@ -1,28 +1,28 @@
 ## 1. Project Setup and Structure
 
-- [ ] 1.1 Create main script file `ssl-wizard.sh` with shebang and initial structure
-- [ ] 1.2 Set up logging infrastructure with timestamp and log levels (INFO, WARN, ERROR)
-- [ ] 1.3 Create output directory structure template: `certs-out/<domain>/`
-- [ ] 1.4 Add configuration variables (timeouts, colors, paths) to script header
+- [x] 1.1 Create main script file `ssl-wizard.sh` with shebang and initial structure
+- [x] 1.2 Set up logging infrastructure with timestamp and log levels (INFO, WARN, ERROR)
+- [x] 1.3 Create output directory structure template: `certs-out/<domain>/`
+- [x] 1.4 Add configuration variables (timeouts, colors, paths) to script header
 
 ## 2. System Diagnostics Implementation
 
-- [ ] 2.1 Implement function to retrieve and display public IP address (with fallback handling)
-- [ ] 2.2 Implement OS version detection (uname, /etc/os-release parsing)
-- [ ] 2.3 Implement port 80 availability check (using ss or netstat)
-- [ ] 2.4 Implement port 443 availability check
-- [ ] 2.5 Create diagnostic summary display function with color formatting
-- [ ] 2.6 Add Ubuntu version validation and error exit for unsupported distributions
+- [x] 2.1 Implement function to retrieve and display public IP address (with fallback handling)
+- [x] 2.2 Implement OS version detection (uname, /etc/os-release parsing)
+- [x] 2.3 Implement port 80 availability check (using ss or netstat)
+- [x] 2.4 Implement port 443 availability check
+- [x] 2.5 Create diagnostic summary display function with color formatting
+- [x] 2.6 Add Ubuntu version validation and error exit for unsupported distributions
 
 ## 3. Dependency Management Implementation
 
-- [ ] 3.1 Implement Certbot detection function
-- [ ] 3.2 Implement snap-based Certbot installation with error handling
-- [ ] 3.3 Implement apt-based Certbot installation as fallback
-- [ ] 3.4 Implement dig/nslookup availability check with fallback logic
-- [ ] 3.5 Implement port checking tool detection (ss/netstat)
-- [ ] 3.6 Create dependency status display with all tools verification
-- [ ] 3.7 Test auto-installation on clean Ubuntu 22.04/24.04 instances
+- [x] 3.1 Implement Certbot detection function
+- [x] 3.2 Implement snap-based Certbot installation with error handling
+- [x] 3.3 Implement apt-based Certbot installation as fallback
+- [x] 3.4 Implement dig/nslookup availability check with fallback logic
+- [x] 3.5 Implement port checking tool detection (ss/netstat)
+- [x] 3.6 Create dependency status display with all tools verification
+- [x] 3.7 Test auto-installation on clean Ubuntu 22.04/24.04 instances
 
 ## 4. DNS Validation Implementation
 
