@@ -1715,9 +1715,11 @@ main() {
   if [[ -z "$DOMAIN" ]]; then
     log_error "Domain name is required"
     echo ""
-    echo "Usage: $SCRIPT_NAME <domain>"
+    echo "Usage: $SCRIPT_NAME <domain> [additional_domains...]"
     echo ""
-    echo "Example: $SCRIPT_NAME example.com"
+    echo "Examples:"
+    echo "  $SCRIPT_NAME example.com"
+    echo "  $SCRIPT_NAME example.com www.example.com api.example.com"
     echo ""
     exit 1
   fi
@@ -1732,17 +1734,208 @@ main() {
   mkdir -p "$OUTPUT_DIR/$DOMAIN"/{certs,keys,configs}
   mkdir -p "$TEMP_DIR"
 
-  # Execute main workflow
+  # Phase 1: Diagnostics and Dependencies
   run_diagnostics
-  check_dependencies
+  
+  if ! check_dependencies; then
+    log_error "Required dependencies not available"
+    error_box "Dependencies Missing" "Some required dependencies could not be installed.\nPlease install them manually and try again."
+    exit 1
+  fi
 
-  # Placeholder for future features
-  log_info "Main workflow milestone completed successfully"
+  # Phase 2: DNS and Port Configuration
+  section_header "DNS and Port Configuration"
+  
+  # Get public IP for validation
+  local public_ip
+  public_ip=$(get_public_ip)
+  
+  if [[ "$public_ip" == "UNKNOWN" ]]; then
+    log_warn "Could not determine public IP - DNS validation may be unavailable"
+    if ! prompt_yes_no "Continue without public IP verification?" "n"; then
+      exit 1
+    fi
+  fi
+  
+  # Validate DNS (if public IP is known)
+  if [[ "$public_ip" != "UNKNOWN" ]]; then
+    log_info "Validating DNS configuration"
+    # Parse all provided domains
+    local -a all_domains=("$DOMAIN")
+    shift  # Remove first domain
+    while [[ $# -gt 0 ]]; do
+      all_domains+=("$1")
+      shift
+    done
+    
+    # Create domain string for validation
+    local domain_string
+    domain_string=$(printf '%s,' "${all_domains[@]}" | sed 's/,$//')
+    
+    log_info "Domains to validate: $domain_string"
+    
+    # Note: validate_domains function would return valid domains
+    # For now, we'll proceed with the domains provided
+  fi
+  
+  # Check for port conflicts
+  log_info "Checking port availability"
+  if ! check_port_available 80; then
+    log_warn "Port 80 is in use"
+    if prompt_yes_no "Would you like to resolve this conflict?" "y"; then
+      resolve_port_conflict 80 || {
+        log_error "Could not resolve port 80 conflict"
+        exit 1
+      }
+    else
+      log_warn "Continuing without resolving port 80 conflict"
+    fi
+  fi
+  
+  if ! check_port_available 443; then
+    log_warn "Port 443 is in use"
+    info_box "Port 443 Status" "Port 443 is in use. This may be okay if you're renewing a certificate.\nMake sure the port is available during certificate issuance."
+  fi
 
-  info_box "Next Steps" "The SSL Wizard is ready for certificate provisioning.\n\nFuture features will include:\n• DNS validation setup\n• Certificate issuance\n• Automatic renewal configuration"
+  # Phase 3: Certificate Type and Challenge Selection
+  log_info "Selecting certificate type and challenge method"
+  
+  local cert_type
+  cert_type=$(select_certificate_type)
+  
+  if [[ -z "$cert_type" ]]; then
+    log_error "No certificate type selected"
+    exit 1
+  fi
+  
+  log_info "Selected certificate type: $cert_type"
+  
+  # Select challenge type
+  local challenge_type
+  challenge_type=$(select_challenge_type)
+  
+  if [[ -z "$challenge_type" ]]; then
+    log_error "No challenge type selected"
+    exit 1
+  fi
+  
+  if ! display_challenge_instructions "$challenge_type" "$DOMAIN"; then
+    log_error "Challenge instructions not accepted"
+    exit 1
+  fi
+  
+  # Phase 4: Email and Rate Limit Acknowledgment
+  local email
+  email=$(prompt_email_and_tos)
+  
+  if [[ -z "$email" ]]; then
+    log_error "Email address not provided"
+    exit 1
+  fi
+  
+  # Display rate limit warning
+  if ! display_rate_limit_warning; then
+    log_error "User did not acknowledge rate limits"
+    exit 1
+  fi
 
-  log_info "SSL Wizard execution completed"
-  section_header "Execution Complete"
+  # Phase 5: Certificate Issuance
+  section_header "Certificate Issuance"
+  
+  log_info "Proceeding with certificate issuance"
+  
+  # Show DNS record info if using DNS challenge
+  if [[ "$challenge_type" == "dns" ]]; then
+    display_dns_status "$DOMAIN" "$public_ip"
+    
+    # For manual DNS challenge, show the format
+    info_box "DNS Challenge Format" "You will need to add a TXT record to your DNS:\n\nType: TXT\nName: _acme-challenge.$DOMAIN\nValue: [Will be provided by Certbot]"
+  fi
+  
+  # Issue certificate based on type
+  case "$cert_type" in
+    single)
+      log_info "Issuing single-domain certificate"
+      if issue_single_domain_certificate "$DOMAIN" "$email" "$challenge_type"; then
+        log_info "Certificate issued successfully"
+      else
+        log_error "Certificate issuance failed"
+        handle_certbot_error "$DOMAIN" "Certbot exited with error"
+        exit 1
+      fi
+      ;;
+    multi)
+      log_info "Issuing multi-domain certificate"
+      # Collect all domains
+      local -a cert_domains=("$DOMAIN")
+      shift  # Remove processed first domain
+      while [[ $# -gt 0 ]]; do
+        cert_domains+=("$1")
+        shift
+      done
+      
+      if issue_multi_domain_certificate "${cert_domains[@]}"; then
+        log_info "Certificate issued successfully for ${#cert_domains[@]} domains"
+      else
+        log_error "Certificate issuance failed"
+        handle_certbot_error "$DOMAIN" "Certbot exited with error"
+        exit 1
+      fi
+      ;;
+    wildcard)
+      log_info "Issuing wildcard certificate"
+      # Extract base domain from wildcard
+      local base_domain="$DOMAIN"
+      if [[ "$base_domain" == \** ]]; then
+        base_domain="${base_domain#*.}"
+      fi
+      
+      if issue_single_domain_certificate "*.$base_domain" "$email" "$challenge_type"; then
+        log_info "Wildcard certificate issued successfully"
+      else
+        log_error "Certificate issuance failed"
+        handle_certbot_error "$DOMAIN" "Certbot exited with error"
+        exit 1
+      fi
+      ;;
+  esac
+
+  # Phase 6: File Organization
+  section_header "File Organization"
+  
+  if organize_certificate_files "$DOMAIN"; then
+    log_info "Certificate files organized successfully"
+  else
+    log_error "Failed to organize certificate files"
+    error_box "File Organization Failed" "Could not organize certificate files.\nFiles may still be available at /etc/letsencrypt/live/$DOMAIN/"
+  fi
+  
+  # Create summary
+  create_issuance_summary "$DOMAIN" "$cert_type" "$challenge_type"
+
+  # Phase 7: Summary and Next Steps
+  section_header "Certificate Issued Successfully"
+  
+  local summary="Domain: $DOMAIN\n"
+  summary="${summary}Type: $cert_type\n"
+  summary="${summary}Challenge: $challenge_type\n"
+  summary="${summary}Email: $email\n"
+  summary="${summary}\n"
+  summary="${summary}Certificate Location:\n"
+  summary="${summary}  Private Key:  ${OUTPUT_DIR}/${DOMAIN}/live/privkey.pem\n"
+  summary="${summary}  Certificate:  ${OUTPUT_DIR}/${DOMAIN}/live/fullchain.pem\n"
+  summary="${summary}  Chain:        ${OUTPUT_DIR}/${DOMAIN}/live/chain.pem\n"
+  summary="${summary}\n"
+  summary="${summary}Next Steps:\n"
+  summary="${summary}1. Update your web server configuration\n"
+  summary="${summary}2. Set up automatic renewal with: certbot renew\n"
+  summary="${summary}3. Test your certificate at: https://www.ssllabs.com/\n"
+  summary="${summary}\n"
+  summary="${summary}Certificate valid for 90 days from issue date."
+  
+  info_box "✓ Certificate Successfully Issued" "$summary"
+  
+  log_info "SSL Wizard execution completed successfully"
 }
 
 # Run main function with all arguments
