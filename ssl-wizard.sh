@@ -1184,6 +1184,467 @@ manual_dns_check() {
 }
 
 #############################################################################
+# SECTION 9: CERTIFICATE ISSUANCE (Tasks 6.1-6.13)
+#############################################################################
+
+# Define DNS providers
+declare -A DNS_PROVIDERS=(
+  [cloudflare]="Cloudflare"
+  [route53]="AWS Route 53"
+  [digitalocean]="DigitalOcean"
+  [namecheap]="Namecheap"
+  [godaddy]="GoDaddy"
+  [manual]="Manual DNS Entry"
+)
+
+# Task 6.1: Challenge type selection menu
+select_challenge_type() {
+  section_header "Challenge Type Selection"
+  
+  log_info "Presenting challenge type selection menu"
+  
+  echo ""
+  echo "Select ACME challenge type for certificate validation:"
+  echo ""
+  echo "  1) DNS-01 (Manual TXT Record) - Most flexible, works everywhere"
+  echo "  2) HTTP-01 (Port 80 HTTP Server) - Requires port 80, faster"
+  echo "  3) DNS API Integration - Automated DNS updates (future)"
+  echo ""
+  
+  local choice
+  read -p "Enter your choice (1-3): " choice
+  
+  case "$choice" in
+    1)
+      log_info "User selected DNS-01 (Manual TXT Record) challenge"
+      echo "dns"
+      return 0
+      ;;
+    2)
+      log_info "User selected HTTP-01 (Port 80) challenge"
+      echo "http"
+      return 0
+      ;;
+    3)
+      log_info "User selected DNS API challenge"
+      echo "dns-api"
+      return 0
+      ;;
+    *)
+      log_error "Invalid challenge type selection: $choice"
+      echo "Invalid choice. Please select 1, 2, or 3."
+      select_challenge_type
+      ;;
+  esac
+}
+
+# Task 6.2: Display challenge-specific instructions and DNS provider selection
+display_challenge_instructions() {
+  local challenge_type="$1"
+  local domain="$2"
+  
+  section_header "Challenge Instructions"
+  
+  case "$challenge_type" in
+    dns)
+      log_info "Displaying DNS challenge instructions"
+      
+      echo ""
+      echo "You will need to create a TXT record in your DNS provider."
+      echo ""
+      echo "Steps:"
+      echo "1. A TXT record will be displayed below"
+      echo "2. Add it to your DNS provider's control panel"
+      echo "3. Wait for DNS propagation (usually 30 seconds to 5 minutes)"
+      echo "4. The wizard will verify the record and issue your certificate"
+      echo ""
+      
+      read -p "Press ENTER to continue..."
+      ;;
+    http)
+      log_info "Displaying HTTP challenge instructions"
+      
+      error_box "HTTP-01 Challenge Requirements" "This challenge requires:\n\n1. Port 80 must be accessible from the internet\n2. Domain must resolve to your server's IP\n3. No web server should be running on port 80\n\nThe wizard will start a temporary web server to validate the certificate."
+      
+      if prompt_yes_no "Do you understand and wish to proceed?" "y"; then
+        return 0
+      else
+        return 1
+      fi
+      ;;
+    dns-api)
+      log_info "Displaying DNS API challenge instructions"
+      
+      error_box "DNS API Integration" "This feature is not yet implemented.\n\nPlease select DNS-01 (Manual) or HTTP-01 for now."
+      return 1
+      ;;
+  esac
+  
+  return 0
+}
+
+# Task 6.3: Create formatted display for DNS record structure
+display_dns_record_structure() {
+  local domain="$1"
+  local txt_value="$2"
+  
+  section_header "DNS Record Configuration"
+  
+  local acme_domain="_acme-challenge.${domain}"
+  
+  echo ""
+  echo "╔════════════════════════════════════════════════════════════════════╗"
+  echo "║                    ADD THIS DNS RECORD                             ║"
+  echo "╠════════════════════════════════════════════════════════════════════╣"
+  echo "║                                                                    ║"
+  echo "║  Type:  TXT                                                        ║"
+  echo "║  Name:  ${acme_domain}"
+  echo "║  Value: ${txt_value}"
+  echo "║  TTL:   300 (or lowest available)                                  ║"
+  echo "║                                                                    ║"
+  echo "╚════════════════════════════════════════════════════════════════════╝"
+  echo ""
+  
+  log_info "Displayed DNS record for $domain: $txt_value"
+}
+
+# Task 6.4: Display current DNS A record status
+display_dns_status() {
+  local domain="$1"
+  local expected_ip="$2"
+  
+  section_header "Current DNS Status"
+  
+  local actual_ip
+  actual_ip=$(get_a_record "$domain" 2>/dev/null || echo "UNKNOWN")
+  
+  local status="PASS"
+  if [[ "$actual_ip" != "$expected_ip" ]]; then
+    status="FAIL"
+  fi
+  
+  echo ""
+  echo "╔════════════════════════════════════════════════════════════════════╗"
+  echo "║                    A RECORD VERIFICATION                           ║"
+  echo "╠════════════════════════════════════════════════════════════════════╣"
+  echo "║                                                                    ║"
+  echo "║  Domain:      $domain"
+  echo "║  Expected IP: $expected_ip"
+  echo "║  Actual IP:   $actual_ip"
+  echo "║  Status:      $status"
+  echo "║                                                                    ║"
+  echo "╚════════════════════════════════════════════════════════════════════╝"
+  echo ""
+  
+  log_info "DNS A record status for $domain: Expected=$expected_ip, Actual=$actual_ip, Status=$status"
+}
+
+# Task 6.5: Wildcard-specific DNS record format
+get_acme_challenge_domain() {
+  local domain="$1"
+  local is_wildcard="${2:-false}"
+  
+  if [[ "$is_wildcard" == "true" ]]; then
+    # For wildcard, use _acme-challenge.example.com (not _acme-challenge.*.example.com)
+    echo "_acme-challenge.${domain}"
+  else
+    # For single domain
+    echo "_acme-challenge.${domain}"
+  fi
+}
+
+# Task 6.6: Certificate type selection menu (single/multi/wildcard)
+select_certificate_type() {
+  section_header "Certificate Type Selection"
+  
+  log_info "Presenting certificate type selection menu"
+  
+  echo ""
+  echo "Select certificate type:"
+  echo ""
+  echo "  1) Single Domain       - Certificate for one domain (e.g., example.com)"
+  echo "  2) Multi-Domain (SAN)  - One cert for multiple domains"
+  echo "  3) Wildcard            - Certificate for *.example.com (includes subdomains)"
+  echo ""
+  
+  local choice
+  read -p "Enter your choice (1-3): " choice
+  
+  case "$choice" in
+    1)
+      log_info "User selected Single Domain certificate"
+      echo "single"
+      return 0
+      ;;
+    2)
+      log_info "User selected Multi-Domain certificate"
+      echo "multi"
+      return 0
+      ;;
+    3)
+      log_info "User selected Wildcard certificate"
+      echo "wildcard"
+      return 0
+      ;;
+    *)
+      log_error "Invalid certificate type selection: $choice"
+      echo "Invalid choice. Please select 1, 2, or 3."
+      select_certificate_type
+      ;;
+  esac
+}
+
+# Task 6.7: Single-domain certificate issuance via Certbot
+issue_single_domain_certificate() {
+  local domain="$1"
+  local email="${2:-}"
+  local challenge_type="${3:-dns}"
+  
+  log_info "Starting single-domain certificate issuance for $domain"
+  
+  # Build certbot command
+  local cert_command="certbot certonly"
+  
+  if [[ "$challenge_type" == "dns" ]]; then
+    cert_command="$cert_command --manual --preferred-challenges dns"
+  elif [[ "$challenge_type" == "http" ]]; then
+    cert_command="$cert_command --standalone --preferred-challenges http"
+  fi
+  
+  cert_command="$cert_command --domain $domain"
+  
+  if [[ -n "$email" ]]; then
+    cert_command="$cert_command --email $email"
+  fi
+  
+  cert_command="$cert_command --agree-tos --non-interactive"
+  
+  section_header "Certificate Issuance in Progress"
+  
+  log_info "Executing certbot: $cert_command"
+  
+  if eval "$cert_command" 2>&1 | tee -a "$LOG_FILE"; then
+    log_info "Certificate successfully issued for $domain"
+    return 0
+  else
+    log_error "Certificate issuance failed for $domain"
+    return 1
+  fi
+}
+
+# Task 6.8: Multi-domain certificate issuance
+issue_multi_domain_certificate() {
+  local -a domains=("$@")
+  local email=""
+  local challenge_type="dns"
+  
+  log_info "Starting multi-domain certificate issuance for ${#domains[@]} domains"
+  
+  # Build certbot command with multiple domains
+  local cert_command="certbot certonly --manual --preferred-challenges dns"
+  
+  for domain in "${domains[@]}"; do
+    cert_command="$cert_command --domain $domain"
+  done
+  
+  if [[ -n "$email" ]]; then
+    cert_command="$cert_command --email $email"
+  fi
+  
+  cert_command="$cert_command --agree-tos --non-interactive"
+  
+  section_header "Multi-Domain Certificate Issuance in Progress"
+  
+  log_info "Executing certbot: $cert_command"
+  
+  if eval "$cert_command" 2>&1 | tee -a "$LOG_FILE"; then
+    log_info "Certificate successfully issued for ${#domains[@]} domains"
+    return 0
+  else
+    log_error "Certificate issuance failed for multiple domains"
+    return 1
+  fi
+}
+
+# Task 6.9: Email prompt and TOS agreement flow
+prompt_email_and_tos() {
+  section_header "Account Setup"
+  
+  local email
+  read -p "Enter email address for Let's Encrypt account: " email
+  
+  if [[ -z "$email" ]]; then
+    log_error "Email address is required"
+    error_box "Error" "Email address cannot be empty"
+    return 1
+  fi
+  
+  if [[ ! "$email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+    log_error "Invalid email format: $email"
+    error_box "Error" "Invalid email format"
+    return 1
+  fi
+  
+  log_info "Email provided: $email"
+  
+  # TOS agreement
+  info_box "Let's Encrypt Terms of Service" "You must agree to the Let's Encrypt Terms of Service to issue a certificate.\n\nhttps://letsencrypt.org/documents/LE-SA-v1.2-November-15-2017.pdf"
+  
+  if prompt_yes_no "Do you agree to the Let's Encrypt Terms of Service?" "y"; then
+    log_info "User agreed to Let's Encrypt TOS"
+    echo "$email"
+    return 0
+  else
+    log_error "User declined Let's Encrypt TOS"
+    return 1
+  fi
+}
+
+# Task 6.10: Let's Encrypt rate limit warning
+display_rate_limit_warning() {
+  section_header "Rate Limit Notice"
+  
+  error_box "Let's Encrypt Rate Limits" "⚠ Important Rate Limit Information ⚠\n\nLet's Encrypt enforces rate limits:\n\n• 50 certificates per domain per week\n• Duplicate certificate limit: 5 exact duplicates per week\n• Requests per IP: 10 per second\n\nIf you hit a rate limit, you'll receive a 429 error.\nWait until the next rate limit window to retry.\n\nFor testing, use the Let's Encrypt staging environment."
+  
+  if prompt_yes_no "Do you understand these limits and wish to proceed?" "y"; then
+    log_info "User acknowledged rate limits"
+    return 0
+  else
+    log_warn "User declined after rate limit warning"
+    return 1
+  fi
+}
+
+# Task 6.11: Error capture and logging for Certbot failures
+handle_certbot_error() {
+  local domain="$1"
+  local error_message="$2"
+  
+  log_error "Certbot error for domain $domain: $error_message"
+  
+  error_box "Certificate Issuance Failed" "Failed to issue certificate for $domain.\n\nError:\n$error_message\n\nPlease review the logs at:\n$LOG_FILE"
+}
+
+# Tasks 6.12-6.13: Testing functions (to be used in main workflow)
+
+#############################################################################
+# SECTION 9: CERTIFICATE STORAGE & FILE ORGANIZATION (Tasks 8.1-8.8)
+#############################################################################
+
+# Task 8.1-8.2: Create output directory structure and copy certificates
+organize_certificate_files() {
+  local domain="$1"
+  
+  section_header "Organizing Certificate Files"
+  
+  log_info "Organizing certificate files for $domain"
+  
+  local output_base="${OUTPUT_DIR}/${domain}"
+  local letsencrypt_path="/etc/letsencrypt/live/${domain}"
+  
+  # Create directory structure
+  mkdir -p "${output_base}/live"
+  mkdir -p "${output_base}/archive"
+  mkdir -p "${output_base}/logs"
+  
+  log_info "Created directory structure at $output_base"
+  
+  # Check if Let's Encrypt certificate exists
+  if [[ ! -d "$letsencrypt_path" ]]; then
+    log_error "Certificate not found at $letsencrypt_path"
+    return 1
+  fi
+  
+  # Backup existing files if they exist
+  if [[ -d "${output_base}/live/cert.pem" ]]; then
+    local backup_timestamp
+    backup_timestamp=$(date +%Y%m%d_%H%M%S)
+    
+    if mv "${output_base}/live" "${output_base}/archive/live.backup.${backup_timestamp}"; then
+      log_info "Backed up existing files with timestamp $backup_timestamp"
+    fi
+  fi
+  
+  # Copy certificate files
+  if cp -v "${letsencrypt_path}/cert.pem" "${output_base}/live/" 2>&1 | tee -a "$LOG_FILE"; then
+    log_info "Copied cert.pem"
+  else
+    log_error "Failed to copy cert.pem"
+    return 1
+  fi
+  
+  if cp -v "${letsencrypt_path}/chain.pem" "${output_base}/live/" 2>&1 | tee -a "$LOG_FILE"; then
+    log_info "Copied chain.pem"
+  fi
+  
+  if cp -v "${letsencrypt_path}/fullchain.pem" "${output_base}/live/" 2>&1 | tee -a "$LOG_FILE"; then
+    log_info "Copied fullchain.pem"
+  fi
+  
+  if cp -v "${letsencrypt_path}/privkey.pem" "${output_base}/live/" 2>&1 | tee -a "$LOG_FILE"; then
+    log_info "Copied privkey.pem"
+  else
+    log_error "Failed to copy privkey.pem"
+    return 1
+  fi
+  
+  log_info "Certificate files copied to $output_base/live"
+  
+  # Task 8.3: Set file permissions
+  chmod 600 "${output_base}/live/privkey.pem"
+  chmod 644 "${output_base}/live/cert.pem"
+  chmod 644 "${output_base}/live/chain.pem"
+  chmod 644 "${output_base}/live/fullchain.pem"
+  
+  log_info "File permissions set: privkey.pem=600, cert.pem=644, chain.pem=644, fullchain.pem=644"
+  
+  # Task 8.4: Archive original files
+  local archive_timestamp
+  archive_timestamp=$(date +%Y%m%d_%H%M%S)
+  mkdir -p "${output_base}/archive/original_${archive_timestamp}"
+  
+  if cp -r "${letsencrypt_path}"/* "${output_base}/archive/original_${archive_timestamp}/" 2>&1 | tee -a "$LOG_FILE"; then
+    log_info "Created archive backup with timestamp $archive_timestamp"
+  fi
+  
+  return 0
+}
+
+# Task 8.6: Log file creation with detailed operation record
+create_issuance_summary() {
+  local domain="$1"
+  local cert_type="$2"
+  local challenge_type="$3"
+  
+  local summary_file="${OUTPUT_DIR}/${domain}/ISSUANCE_SUMMARY.txt"
+  
+  {
+    echo "================================================================================"
+    echo "SSL Certificate Issuance Summary"
+    echo "================================================================================"
+    echo ""
+    echo "Domain:             $domain"
+    echo "Certificate Type:   $cert_type"
+    echo "Challenge Type:     $challenge_type"
+    echo "Issued:             $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "Script Version:     $VERSION"
+    echo ""
+    echo "Certificate Files:"
+    echo "  Private Key:      ${OUTPUT_DIR}/${domain}/live/privkey.pem (600)"
+    echo "  Certificate:      ${OUTPUT_DIR}/${domain}/live/cert.pem (644)"
+    echo "  Chain:            ${OUTPUT_DIR}/${domain}/live/chain.pem (644)"
+    echo "  Full Chain:       ${OUTPUT_DIR}/${domain}/live/fullchain.pem (644)"
+    echo ""
+    echo "Archive:            ${OUTPUT_DIR}/${domain}/archive/"
+    echo "Logs:               ${OUTPUT_DIR}/${domain}/logs/"
+    echo ""
+    echo "================================================================================"
+  } > "$summary_file"
+  
+  log_info "Created issuance summary at $summary_file"
+}
+
+#############################################################################
 # SECTION 10: ERROR HANDLING & CLEANUP
 #############################################################################
 

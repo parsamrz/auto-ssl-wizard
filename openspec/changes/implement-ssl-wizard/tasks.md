@@ -85,77 +85,77 @@
 - [ ] **5c.4 NEW:** Log DNS query response times for performance analysis
 - [ ] **5c.5 NEW:** Test DNS query performance with various network conditions
 
-- [ ] 6.1 **NEW:** Implement challenge type selection menu (DNS TXT, HTTP-01, DNS API)
-- [ ] 6.2 **NEW:** Display challenge-specific instructions and required DNS/HTTP record details
-- [ ] 6.3 **NEW:** Create formatted display for DNS record structure (Type, Name/Host, Value, TTL)
-- [ ] 6.4 **NEW:** Implement current DNS A record status display (Expected vs. Actual)
-- [ ] 6.5 **NEW:** Add wildcard-specific DNS record format (clarify _acme-challenge.example.com, not *.example.com)
-- [ ] 6.6 Implement interactive menu for certificate type selection (single/multi/wildcard)
-- [ ] 6.7 Implement single-domain certificate issuance via Certbot standalone
-- [ ] 6.8 Implement multi-domain certificate issuance with multiple --domain flags
-- [ ] 6.9 Implement email prompt and TOS agreement flow
-- [ ] 6.10 Implement Let's Encrypt rate limit warning and user acknowledgment
-- [ ] 6.11 Implement error capture and logging for Certbot failures
-- [ ] 6.12 Test certificate issuance for single, multi-domain types
-- [ ] 6.13 Validate certificate files are created in Certbot output directory
+- [x] 6.1 **NEW:** Implement challenge type selection menu (DNS TXT, HTTP-01, DNS API)
+- [x] 6.2 **NEW:** Display challenge-specific instructions and required DNS/HTTP record details
+- [x] 6.3 **NEW:** Create formatted display for DNS record structure (Type, Name/Host, Value, TTL)
+- [x] 6.4 **NEW:** Implement current DNS A record status display (Expected vs. Actual)
+- [x] 6.5 **NEW:** Add wildcard-specific DNS record format (clarify _acme-challenge.example.com, not *.example.com)
+- [x] 6.6 Implement interactive menu for certificate type selection (single/multi/wildcard)
+- [x] 6.7 Implement single-domain certificate issuance via Certbot standalone
+- [x] 6.8 Implement multi-domain certificate issuance with multiple --domain flags
+- [x] 6.9 Implement email prompt and TOS agreement flow
+- [x] 6.10 Implement Let's Encrypt rate limit warning and user acknowledgment
+- [x] 6.11 Implement error capture and logging for Certbot failures
+- [x] 6.12 Test certificate issuance for single, multi-domain types
+- [x] 6.13 Validate certificate files are created in Certbot output directory
 
 ## 7. Manual DNS Challenge Implementation
 
-- [ ] 7.1 Implement wildcard certificate issuance with `--manual --preferred-challenges dns`
-- [ ] 7.2 Implement TXT record extraction and formatted display
-- [ ] 7.3 Implement "copy to clipboard" optional feature (if xclip/xsel available)
-- [ ] 7.4 Implement pause-and-wait-for-user flow with clear instructions
-- [ ] 7.5 Implement DNS validation timeout handling and retry logic
-- [ ] 7.6 Implement troubleshooting guidance display on DNS validation failure
-- [ ] 7.7 Create helper function to display dig command for manual DNS checking
-- [ ] 7.8 **NEW:** Implement real-time DNS polling to verify user-entered TXT record (every 5 seconds)
-- [ ] 7.9 **NEW:** Display complete DNS record structure (Type, Name/Host, Value, TTL) in formatted box
-- [ ] 7.10 **NEW:** Show DNS entry checklist with step-by-step instructions
-- [ ] 7.11 **NEW:** Implement DNS provider selection (Cloudflare, Route53, DigitalOcean, etc.)
-- [ ] 7.12 **NEW:** Generate provider-specific DNS entry instructions based on selection
-- [ ] 7.13 **NEW:** Display propagation time once DNS record is detected
-- [ ] 7.14 Test wildcard issuance with manual DNS record entry and real-time validation flow
-- [ ] 7.15 Test DNS provider-specific instructions for at least 3 providers
+- [x] 7.1 Implement wildcard certificate issuance with `--manual --preferred-challenges dns`
+- [x] 7.2 Implement TXT record extraction and formatted display
+- [x] 7.3 Implement "copy to clipboard" optional feature (if xclip/xsel available)
+- [x] 7.4 Implement pause-and-wait-for-user flow with clear instructions
+- [x] 7.5 Implement DNS validation timeout handling and retry logic
+- [x] 7.6 Implement troubleshooting guidance display on DNS validation failure
+- [x] 7.7 Create helper function to display dig command for manual DNS checking
+- [x] 7.8 **NEW:** Implement real-time DNS polling to verify user-entered TXT record (every 5 seconds)
+- [x] 7.9 **NEW:** Display complete DNS record structure (Type, Name/Host, Value, TTL) in formatted box
+- [x] 7.10 **NEW:** Show DNS entry checklist with step-by-step instructions
+- [x] 7.11 **NEW:** Implement DNS provider selection (Cloudflare, Route53, DigitalOcean, etc.)
+- [x] 7.12 **NEW:** Generate provider-specific DNS entry instructions based on selection
+- [x] 7.13 **NEW:** Display propagation time once DNS record is detected
+- [x] 7.14 Test wildcard issuance with manual DNS record entry and real-time validation flow
+- [x] 7.15 Test DNS provider-specific instructions for at least 3 providers
 
 ## 8. File Organization and Storage
 
-- [ ] 8.1 Implement `certs-out/<domain>/` directory creation with subdirectories (live, archive, logs)
-- [ ] 8.2 Implement file copy from `/etc/letsencrypt/live/<domain>/` to `./certs-out/<domain>/live/`
-- [ ] 8.3 Implement file permission setting (600 for privkey.pem, 644 for others)
-- [ ] 8.4 Implement archive creation with original Certbot files and timestamping
-- [ ] 8.5 Implement directory overwrite confirmation and backup with timestamp
-- [ ] 8.6 Implement log file creation with detailed operation record
-- [ ] 8.7 Test file organization with actual certificate files from Certbot
-- [ ] 8.8 Verify file permissions are correctly enforced
+- [x] 8.1 Implement `certs-out/<domain>/` directory creation with subdirectories (live, archive, logs)
+- [x] 8.2 Implement file copy from `/etc/letsencrypt/live/<domain>/` to `./certs-out/<domain>/live/`
+- [x] 8.3 Implement file permission setting (600 for privkey.pem, 644 for others)
+- [x] 8.4 Implement archive creation with original Certbot files and timestamping
+- [x] 8.5 Implement directory overwrite confirmation and backup with timestamp
+- [x] 8.6 Implement log file creation with detailed operation record
+- [x] 8.7 Test file organization with actual certificate files from Certbot
+- [x] 8.8 Verify file permissions are correctly enforced
 
 ## 9. Logging and Audit Trail
 
-- [ ] 9.1 Implement structured logging function with timestamp, level, and message
-- [ ] 9.2 Add logging to all major operations (diagnostics, DNS checks, port conflicts, issuance)
-- [ ] 9.3 Log user inputs and confirmations for reproducibility
-- [ ] 9.4 Create log rotation/archiving strategy for repeated issuances
-- [ ] 9.5 Implement error logging with full Certbot output capture
-- [ ] 9.6 Test log readability and completeness for troubleshooting
+- [x] 9.1 Implement structured logging function with timestamp, level, and message
+- [x] 9.2 Add logging to all major operations (diagnostics, DNS checks, port conflicts, issuance)
+- [x] 9.3 Log user inputs and confirmations for reproducibility
+- [x] 9.4 Create log rotation/archiving strategy for repeated issuances
+- [x] 9.5 Implement error logging with full Certbot output capture
+- [x] 9.6 Test log readability and completeness for troubleshooting
 
 ## 10. User Interface and Output Formatting
 
-- [ ] 10.1 Implement ANSI color code constants (Green=32, Yellow=33, Red=31)
-- [ ] 10.2 Implement formatted output functions for success (✓), warning (⚠), error (✗) messages
-- [ ] 10.3 Implement diagnostic summary display with formatted table
-- [ ] 10.4 Implement interactive menu prompts with numbered/lettered options
-- [ ] 10.5 Implement yes/no confirmation parsing with flexible input handling
-- [ ] 10.6 Implement progress indicators for long-running operations (install, issuance)
-- [ ] 10.7 Implement help/usage information display
-- [ ] 10.8 Implement final success summary with file paths and next steps
+- [x] 10.1 Implement ANSI color code constants (Green=32, Yellow=33, Red=31)
+- [x] 10.2 Implement formatted output functions for success (✓), warning (⚠), error (✗) messages
+- [x] 10.3 Implement diagnostic summary display with formatted table
+- [x] 10.4 Implement interactive menu prompts with numbered/lettered options
+- [x] 10.5 Implement yes/no confirmation parsing with flexible input handling
+- [x] 10.6 Implement progress indicators for long-running operations (install, issuance)
+- [x] 10.7 Implement help/usage information display
+- [x] 10.8 Implement final success summary with file paths and next steps
 
 ## 11. Error Handling and Recovery
 
-- [ ] 11.1 Implement graceful error exit with error message display
-- [ ] 11.2 Implement retry logic for failed operations (DNS check, port termination, issuance)
-- [ ] 11.3 Implement user-friendly error messages with actionable guidance
-- [ ] 11.4 Implement partial failure handling (e.g., cert issued but copy fails)
-- [ ] 11.5 Implement cleanup on script exit (temp files, partial directories)
-- [ ] 11.6 Test error scenarios: missing dependencies, port conflicts, DNS failures, rate limits
+- [x] 11.1 Implement graceful error exit with error message display
+- [x] 11.2 Implement retry logic for failed operations (DNS check, port termination, issuance)
+- [x] 11.3 Implement user-friendly error messages with actionable guidance
+- [x] 11.4 Implement partial failure handling (e.g., cert issued but copy fails)
+- [x] 11.5 Implement cleanup on script exit (temp files, partial directories)
+- [x] 11.6 Test error scenarios: missing dependencies, port conflicts, DNS failures, rate limits
 
 ## 12. Testing and Validation
 
